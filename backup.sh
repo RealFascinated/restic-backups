@@ -61,8 +61,15 @@ validate_config() {
         exit 1
     fi
 
+    # Check if backup path exists and is accessible
     if [ ! -d "${CONFIG[BACKUP_PATH]}" ]; then
         echo "Error: Backup path does not exist: ${CONFIG[BACKUP_PATH]}"
+        exit 1
+    fi
+    
+    # Check if we have read permissions
+    if [ ! -r "${CONFIG[BACKUP_PATH]}" ]; then
+        echo "Error: No read permission for backup path: ${CONFIG[BACKUP_PATH]}"
         exit 1
     fi
 }
@@ -249,14 +256,22 @@ main() {
     # Run backup
     log "Running backup..."
     log "Command: restic -r ${CONFIG[RESTIC_REPOSITORY]} backup ${CONFIG[BACKUP_PATH]}"
-    if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" backup "${CONFIG[BACKUP_PATH]}" >> "$BACKUP_LOG" 2>&1; then
-        log "Backup failed with exit code $?"
+    
+    # Check if restic command exists and is executable
+    if ! command -v restic >/dev/null 2>&1; then
+        log "Error: restic command not found"
         backup_exit_code=1
     else
-        backup_exit_code=0
-        log "Backup completed successfully"
-        # Add a small delay to ensure the snapshot is registered
-        sleep 2
+        # Run the backup command and capture both stdout and stderr
+        if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" backup "${CONFIG[BACKUP_PATH]}" >> "$BACKUP_LOG" 2>&1; then
+            log "Backup failed. Check the log file for details: $BACKUP_LOG"
+            backup_exit_code=1
+        else
+            backup_exit_code=0
+            log "Backup completed successfully"
+            # Add a small delay to ensure the snapshot is registered
+            sleep 2
+        fi
     fi
     
     # Get snapshot information
