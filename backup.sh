@@ -276,6 +276,9 @@ main() {
     log "Exporting configuration..."
     export_config
     
+    # Initialize backup exit code
+    local backup_exit_code=1
+    
     # Test restic repository access
     log "Testing repository access..."
     if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" snapshots 2>&1 | tee -a "$BACKUP_LOG"; then
@@ -294,23 +297,37 @@ main() {
             done
             backup_exit_code=1
         else
-            backup_exit_code=0
-            log "Backup completed successfully"
-            # Add a small delay to ensure the snapshot is registered
-            sleep 2
+            # Check if backup was actually successful by looking for "snapshot" in the output
+            if grep -q "snapshot" "$BACKUP_LOG"; then
+                log "Backup completed successfully"
+                backup_exit_code=0
+                # Add a small delay to ensure the snapshot is registered
+                sleep 2
+            else
+                log "Backup command completed but no snapshot was created. Check the log for details:"
+                tail -n 5 "$BACKUP_LOG" | while read -r line; do
+                    log "  $line"
+                done
+                backup_exit_code=1
+            fi
         fi
     fi
     
     # Get snapshot information
     log "Getting snapshot information..."
     local snapshot_id
-    if ! snapshot_id=$(restic -r "${CONFIG[RESTIC_REPOSITORY]}" snapshots --json 2>/dev/null | jq -r 'sort_by(.time) | reverse | .[0].id // "unknown"'); then
-        log "Error getting snapshot ID"
+    if [ $backup_exit_code -eq 0 ]; then
+        if ! snapshot_id=$(restic -r "${CONFIG[RESTIC_REPOSITORY]}" snapshots --json 2>/dev/null | jq -r 'sort_by(.time) | reverse | .[0].id // "unknown"'); then
+            log "Error getting snapshot ID"
+            snapshot_id="unknown"
+        fi
+        # Trim the snapshot ID to first 8 characters
+        snapshot_id="${snapshot_id:0:8}"
+        log "Snapshot ID: $snapshot_id"
+    else
         snapshot_id="unknown"
+        log "Skipping snapshot info due to backup failure"
     fi
-    # Trim the snapshot ID to first 8 characters
-    snapshot_id="${snapshot_id:0:8}"
-    log "Snapshot ID: $snapshot_id"
     
     # Initialize variables
     local status="❌ Failed"
