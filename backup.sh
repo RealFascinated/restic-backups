@@ -57,19 +57,42 @@ validate_config() {
     done
 
     if [ ${#missing_vars[@]} -gt 0 ]; then
-        echo "Error: Missing required configuration: ${missing_vars[*]}"
+        log "Error: Missing required configuration: ${missing_vars[*]}"
         exit 1
     fi
 
     # Check if backup path exists and is accessible
     if [ ! -d "${CONFIG[BACKUP_PATH]}" ]; then
-        echo "Error: Backup path does not exist: ${CONFIG[BACKUP_PATH]}"
+        log "Error: Backup path does not exist: ${CONFIG[BACKUP_PATH]}"
+        log "Please create the directory or specify a valid path"
         exit 1
     fi
     
     # Check if we have read permissions
     if [ ! -r "${CONFIG[BACKUP_PATH]}" ]; then
-        echo "Error: No read permission for backup path: ${CONFIG[BACKUP_PATH]}"
+        log "Error: No read permission for backup path: ${CONFIG[BACKUP_PATH]}"
+        log "Please check permissions or run with appropriate access"
+        exit 1
+    fi
+
+    # Check if restic is installed
+    if ! command -v restic >/dev/null 2>&1; then
+        log "Error: restic command not found"
+        log "Please install restic: https://restic.net/"
+        exit 1
+    fi
+
+    # Check if jq is installed
+    if ! command -v jq >/dev/null 2>&1; then
+        log "Error: jq command not found"
+        log "Please install jq: https://stedolan.github.io/jq/download/"
+        exit 1
+    fi
+
+    # Check if curl is installed
+    if ! command -v curl >/dev/null 2>&1; then
+        log "Error: curl command not found"
+        log "Please install curl"
         exit 1
     fi
 }
@@ -257,21 +280,18 @@ main() {
     log "Running backup..."
     log "Command: restic -r ${CONFIG[RESTIC_REPOSITORY]} backup ${CONFIG[BACKUP_PATH]}"
     
-    # Check if restic command exists and is executable
-    if ! command -v restic >/dev/null 2>&1; then
-        log "Error: restic command not found"
+    # Run the backup command and capture both stdout and stderr
+    if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" backup "${CONFIG[BACKUP_PATH]}" >> "$BACKUP_LOG" 2>&1; then
+        log "Backup failed. Last few lines of the log:"
+        tail -n 5 "$BACKUP_LOG" | while read -r line; do
+            log "  $line"
+        done
         backup_exit_code=1
     else
-        # Run the backup command and capture both stdout and stderr
-        if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" backup "${CONFIG[BACKUP_PATH]}" >> "$BACKUP_LOG" 2>&1; then
-            log "Backup failed. Check the log file for details: $BACKUP_LOG"
-            backup_exit_code=1
-        else
-            backup_exit_code=0
-            log "Backup completed successfully"
-            # Add a small delay to ensure the snapshot is registered
-            sleep 2
-        fi
+        backup_exit_code=0
+        log "Backup completed successfully"
+        # Add a small delay to ensure the snapshot is registered
+        sleep 2
     fi
     
     # Get snapshot information
