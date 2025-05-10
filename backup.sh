@@ -279,36 +279,46 @@ main() {
     # Initialize backup exit code
     local backup_exit_code=1
     
-    # Test restic repository access
-    log "Testing repository access..."
-    if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" snapshots 2>&1 | tee -a "$BACKUP_LOG"; then
-        log "Error: Cannot access repository. Please check your credentials and repository URL."
+    # Check backup path
+    log "Checking backup path..."
+    if [ ! -d "${CONFIG[BACKUP_PATH]}" ]; then
+        log "Error: Backup path does not exist: ${CONFIG[BACKUP_PATH]}"
+        backup_exit_code=1
+    elif [ ! -r "${CONFIG[BACKUP_PATH]}" ]; then
+        log "Error: No read permission for backup path: ${CONFIG[BACKUP_PATH]}"
         backup_exit_code=1
     else
-        # Run backup
-        log "Running backup..."
-        log "Command: restic -r ${CONFIG[RESTIC_REPOSITORY]} backup ${CONFIG[BACKUP_PATH]}"
-        
-        # Run the backup command and capture both stdout and stderr
-        if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" backup "${CONFIG[BACKUP_PATH]}" 2>&1 | tee -a "$BACKUP_LOG"; then
-            log "Backup failed. Last few lines of the log:"
-            tail -n 5 "$BACKUP_LOG" | while read -r line; do
-                log "  $line"
-            done
+        # Test restic repository access
+        log "Testing repository access..."
+        if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" snapshots 2>&1 | tee -a "$BACKUP_LOG"; then
+            log "Error: Cannot access repository. Please check your credentials and repository URL."
             backup_exit_code=1
         else
-            # Check if backup was actually successful by looking for "snapshot" in the output
-            if grep -q "snapshot" "$BACKUP_LOG"; then
-                log "Backup completed successfully"
-                backup_exit_code=0
-                # Add a small delay to ensure the snapshot is registered
-                sleep 2
-            else
-                log "Backup command completed but no snapshot was created. Check the log for details:"
+            # Run backup
+            log "Running backup..."
+            log "Command: restic -r ${CONFIG[RESTIC_REPOSITORY]} backup ${CONFIG[BACKUP_PATH]}"
+            
+            # Run the backup command and capture both stdout and stderr
+            if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" backup "${CONFIG[BACKUP_PATH]}" 2>&1 | tee -a "$BACKUP_LOG"; then
+                log "Backup failed. Last few lines of the log:"
                 tail -n 5 "$BACKUP_LOG" | while read -r line; do
                     log "  $line"
                 done
                 backup_exit_code=1
+            else
+                # Check if backup was actually successful by looking for "snapshot" in the output
+                if grep -q "snapshot" "$BACKUP_LOG"; then
+                    log "Backup completed successfully"
+                    backup_exit_code=0
+                    # Add a small delay to ensure the snapshot is registered
+                    sleep 2
+                else
+                    log "Backup command completed but no snapshot was created. Full log:"
+                    cat "$BACKUP_LOG" | while read -r line; do
+                        log "  $line"
+                    done
+                    backup_exit_code=1
+                fi
             fi
         fi
     fi
