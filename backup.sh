@@ -276,22 +276,29 @@ main() {
     log "Exporting configuration..."
     export_config
     
-    # Run backup
-    log "Running backup..."
-    log "Command: restic -r ${CONFIG[RESTIC_REPOSITORY]} backup ${CONFIG[BACKUP_PATH]}"
-    
-    # Run the backup command and capture both stdout and stderr
-    if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" backup "${CONFIG[BACKUP_PATH]}" >> "$BACKUP_LOG" 2>&1; then
-        log "Backup failed. Last few lines of the log:"
-        tail -n 5 "$BACKUP_LOG" | while read -r line; do
-            log "  $line"
-        done
+    # Test restic repository access
+    log "Testing repository access..."
+    if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" snapshots 2>&1 | tee -a "$BACKUP_LOG"; then
+        log "Error: Cannot access repository. Please check your credentials and repository URL."
         backup_exit_code=1
     else
-        backup_exit_code=0
-        log "Backup completed successfully"
-        # Add a small delay to ensure the snapshot is registered
-        sleep 2
+        # Run backup
+        log "Running backup..."
+        log "Command: restic -r ${CONFIG[RESTIC_REPOSITORY]} backup ${CONFIG[BACKUP_PATH]}"
+        
+        # Run the backup command and capture both stdout and stderr
+        if ! restic -r "${CONFIG[RESTIC_REPOSITORY]}" backup "${CONFIG[BACKUP_PATH]}" 2>&1 | tee -a "$BACKUP_LOG"; then
+            log "Backup failed. Last few lines of the log:"
+            tail -n 5 "$BACKUP_LOG" | while read -r line; do
+                log "  $line"
+            done
+            backup_exit_code=1
+        else
+            backup_exit_code=0
+            log "Backup completed successfully"
+            # Add a small delay to ensure the snapshot is registered
+            sleep 2
+        fi
     fi
     
     # Get snapshot information
